@@ -47,9 +47,9 @@ function bootstrap() {
   ensureSheet_(ss, SHEET_NAMES.CONFIG, ["key", "value"]);
   ensureSheet_(ss, SHEET_NAMES.CUSTOM_ITEMS, ["id", "name", "unit", "weeklyTarget"]);
   ensureSheet_(ss, SHEET_NAMES.KAS,
-    ["id", "type", "amount", "desc", "date", "memberId", "createdBy", "createdAt"]);
+    ["id", "type", "amount", "desc", "date", "memberId", "createdBy", "createdAt"], ["date"]);
   ensureSheet_(ss, SHEET_NAMES.MUTABAAH,
-    ["key", "memberId", "monday", "dataJson", "updatedAt"]);
+    ["key", "memberId", "monday", "dataJson", "updatedAt"], ["monday"]);
   ensureSheet_(ss, SHEET_NAMES.BOOKMARKS,
     ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]);
 
@@ -72,13 +72,21 @@ function bootstrap() {
   Logger.log("Bootstrap selesai. Akun admin default: admin / admin123 — SEGERA GANTI setelah login pertama.");
 }
 
-function ensureSheet_(ss, name, headers) {
+// plainTextCols: nama kolom yang HARUS diformat sebagai teks biasa, supaya Google Sheets
+// tidak diam-diam mengubah nilai "2026-07-05" jadi object Date (yang bikin data "hilang"
+// dari filter tanggal di app setelah refresh). Dijalankan tiap bootstrap, aman diulang.
+function ensureSheet_(ss, name, headers, plainTextCols) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
   }
+  (plainTextCols || []).forEach(col => {
+    const idx = headers.indexOf(col);
+    if (idx === -1) return;
+    sheet.getRange(2, idx + 1, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+  });
   return sheet;
 }
 
@@ -246,12 +254,26 @@ function getMembersSheet_() {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.MEMBERS);
 }
 
+// PENTING: Google Sheets otomatis mengubah string tanggal ("2026-07-05") yang ditulis
+// ke sel jadi object Date asli. Kalau dibaca mentah-mentah, itu berubah jadi timestamp UTC
+// penuh (bisa mundur 1 hari akibat konversi timezone) dan TIDAK COCOK LAGI dengan format
+// "yyyy-MM-dd" yang dipakai app untuk mencocokkan/filter data (mis. transaksi kas jadi
+// "hilang" dari tampilan padahal datanya ada di sheet). Normalisasi di sini mencegah itu.
+function normalizeCellValue_(header, value, tz) {
+  if (!(value instanceof Date)) return value;
+  if (/^(date|monday)$/i.test(header)) {
+    return Utilities.formatDate(value, tz, "yyyy-MM-dd"); // kolom tanggal-saja
+  }
+  return value.toISOString(); // kolom timestamp (updatedAt dll) tetap presisi penuh
+}
+
 function readAllRows_(sheet) {
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
+  const tz = Session.getScriptTimeZone();
   return values.slice(1).map(row => {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = row[i]; });
+    headers.forEach((h, i) => { obj[h] = normalizeCellValue_(h, row[i], tz); });
     return obj;
   });
 }
@@ -259,9 +281,10 @@ function readAllRows_(sheet) {
 function findMemberRowIndex_(sheet, predicate) {
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
+  const tz = Session.getScriptTimeZone();
   for (let r = 1; r < values.length; r++) {
     const obj = {};
-    headers.forEach((h, i) => { obj[h] = values[r][i]; });
+    headers.forEach((h, i) => { obj[h] = normalizeCellValue_(h, values[r][i], tz); });
     if (predicate(obj)) return { rowIndex: r + 1, headers, obj };
   }
   return null;
@@ -351,8 +374,9 @@ function actionGetGroupData_(body) {
 
   const customItems = readAllRows_(ss.getSheetByName(SHEET_NAMES.CUSTOM_ITEMS));
   const kasEntries = readAllRows_(ss.getSheetByName(SHEET_NAMES.KAS));
+  const bookmarks = readAllRows_(ss.getSheetByName(SHEET_NAMES.BOOKMARKS)); // untuk teks berjalan tilawah
 
-  return { ok: true, config, members, customItems, kasEntries };
+  return { ok: true, config, members, customItems, kasEntries, bookmarks };
 }
 
 /* ---------------------------------------------------------- */

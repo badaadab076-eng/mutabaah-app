@@ -1,15 +1,14 @@
-# Perubahan dari Versi Sebelumnya
+# Perubahan — Update Kedua
 
-## 🐛 Perbaikan Bug / Stabilitas
-- **Antrean sinkron offline**: perubahan (centang amalan, bookmark, kas) yang gagal terkirim karena tidak ada koneksi sekarang otomatis masuk antrean dan dicoba ulang begitu koneksi kembali — sebelumnya data yang gagal sinkron tidak pernah dicoba ulang otomatis.
-- **Debounce penyimpanan**: centang amalan beruntun tidak lagi membanjiri server dengan banyak request — digabung jadi satu setelah jeda singkat.
-- **Race condition di server**: penyimpanan data anggota/kas/config/mutaba'ah sekarang memakai penguncian (lock) di server, mencegah data tertimpa saat dua admin menyimpan hampir bersamaan.
-- **Keamanan login**: percobaan login sekarang dibatasi (dikunci sementara setelah 5x gagal) untuk mencegah brute-force; perbandingan password memakai metode constant-time (mencegah timing attack).
-- **PWA lengkap**: `manifest.json`, ikon, dan service worker (`sw.js`) yang sebelumnya direferensikan tapi tidak ada filenya, sekarang sudah lengkap dan berfungsi.
+## 🐛 Bug ditemukan & diperbaiki
+- **Kas hilang setelah refresh (akar masalah)**: Google Sheets diam-diam mengubah teks tanggal ("2026-07-05") menjadi object Date saat disimpan. Ketika dibaca kembali, formatnya berubah jadi timestamp UTC penuh dan tidak cocok lagi dengan filter tanggal di aplikasi — sehingga transaksi kas (dan data mutaba'ah mingguan) tampak "hilang" padahal datanya utuh di spreadsheet. Sekarang backend menormalkan nilai tanggal saat dibaca, dan kolom tanggal di sheet diformat sebagai teks biasa agar tidak dikonversi lagi.
+- **Teks berjalan tilawah** (No Ayat/Surah/halaman terakhir) sudah ada di kode tapi hanya membaca data lokal HP masing-masing — di mode kelompok jadi tidak menampilkan progres anggota lain. Sekarang mengambil data bookmark seluruh anggota dari server.
 
-## ✨ Fitur Baru
-- **Wizard "Buat Server Baru"** — tersedia di layar login & Pengaturan. Menuntun user awam membuat server kelompok sendiri (Google Sheets + Apps Script) langkah-demi-langkah, dengan kode server tersalin otomatis ke clipboard, tanpa perlu cari tutorial di luar aplikasi.
-- **Install sebagai Aplikasi (PWA)** — tombol install langsung di menu Pengaturan (Android/desktop), plus panduan khusus untuk iPhone/iPad.
-- **Akses dari mana saja via link** — paket ini siap di-deploy ke GitHub Pages (gratis), menghasilkan satu link yang bisa dibuka dari perangkat mana pun.
-- **Indikator antrean offline** — badge kecil di Pengaturan menunjukkan berapa perubahan yang masih menunggu koneksi untuk disinkron.
-- **Endpoint `ping`** di backend — dipakai wizard & tombol "Tes Koneksi" untuk memverifikasi server benar-benar aktif, sekaligus menampilkan nama kelompok.
+## ✨ Fitur baru
+- **Animasi simpan modern**: badge kecil "Menyimpan... → Tersimpan ✓" muncul di atas layar setiap kali data dikirim ke server, sebelum notifikasi biasa.
+- **Mode Siang/Malam**: tombol matahari/bulan di header, tersimpan sebagai preferensi.
+- **Auto-update real-time**: di mode kelompok, data (dashboard, isian harian, kas) otomatis diperbarui tiap ±15 detik dan saat kembali membuka tab — tidak perlu refresh manual lagi. Perubahan lokal yang belum terkirim tidak akan tertimpa.
+- **Kirim Laporan multi-channel**: tombol "Kirim" sekarang membuka menu pilihan — Bagikan lewat aplikasi manapun yang terinstall (WhatsApp, Telegram, Drive, dll — via share sheet asli HP), atau langsung ke WhatsApp/Telegram/Simpan PDF/Salin teks.
+
+## 🔧 Perlu tindakan dari kamu
+Karena backend (`Code.gs`) berubah, **server yang sudah kamu deploy perlu diperbarui manual** (lihat instruksi di pesan chat) — bukan otomatis, karena itu ada di akun Google-mu sendiri.
