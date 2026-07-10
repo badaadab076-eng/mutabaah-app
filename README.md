@@ -1,34 +1,19 @@
-# Mutaba'ah Yaumiyah — Server "Buat Salinan Template" Sudah Aktif
+# Mutaba'ah Yaumiyah — Fix: Kas Menampilkan Data Server Lama Saat Pindah Server
 
-## ✅ Sudah tersambung
-ID Template Sheet kamu (`1XTZwPCD4M803CDQHKyZwEMFbUIS6aJjkEnVCbbf_uFw`) sudah dipasang di 2 tempat:
-- `Code.gs` → `TEMPLATE_SPREADSHEET_ID` (jaring pengaman anti bootstrap/deploy tidak sengaja)
-- `index.html` (kode aplikasi) → tombol "Buat Salinan Template Sekarang" di wizard
+## Bug yang diperbaiki
+Saat login ke server BARU (URL berbeda dari sebelumnya), tab Kas masih menampilkan data dari server LAMA. Penyebabnya: ada logika "pakai data yang jumlahnya lebih banyak antara cache lokal vs server" yang dimaksudkan untuk jaga-jaga race condition — tapi ini keliru saat ganti server, karena cache lokal dari server lama bisa kebetulan lebih banyak, jadi menutupi data server baru yang benar.
 
-## ⚠️ WAJIB dicek sebelum dipakai orang lain
-**Pastikan Sheet template kamu (link di atas) sudah berisi `Code.gs` VERSI TERBARU ini** (yang ada di paket ini), bukan versi lama. Soalnya kalau template masih pakai kode lama, SEMUA orang yang nanti "Buat Salinan" akan otomatis mewarisi bug lama (kas hilang setelah refresh, dll) — walau aplikasinya sendiri sudah versi baru.
+**Fix**: begitu berhasil ambil data dari server, data itu SELALU dipakai apa adanya (tidak dibanding-bandingkan lagi dengan cache). Proteksi race condition transaksi kas sudah ditangani terpisah lewat sistem antrean offline yang sudah ada.
 
-Cara pastikan:
-1. Buka Sheet template: https://docs.google.com/spreadsheets/d/1XTZwPCD4M803CDQHKyZwEMFbUIS6aJjkEnVCbbf_uFw/edit
-2. **Extensions → Apps Script**
-3. Hapus semua kode yang ada, tempel isi `Code.gs` dari paket ini
-4. `Ctrl+S` untuk simpan — **jangan** jalankan bootstrap atau Deploy di sini (memang akan ditolak otomatis oleh `guardAgainstTemplate_`, itu jaring pengamannya)
-5. Pastikan sharing masih "Anyone with the link → Viewer" dengan opsi copy tetap aktif
+## Catatan kecil (bukan bug, cuma kosmetik)
+Saat pertama buka aplikasi setelah pindah server, sekilas mungkin masih sempat menampilkan data lama selama proses memuat (before data server baru selesai diambil) — lalu otomatis diganti begitu server merespons (biasanya di bawah 1 detik). Ini normal dan akan hilang sendiri; kalau butuh instan tanpa kedipan sama sekali, bisa saya bikinkan pembersihan cache otomatis saat URL server berubah — tinggal bilang kalau mau itu juga ditambahkan.
 
-## Tes end-to-end (disarankan sebelum dibagikan ke orang lain)
-1. Buka aplikasi pakai mode Incognito / akun Google lain
-2. Login screen → **"Ingin jadi admin kelompok baru? Buat server sendiri di sini"**
-3. Ikuti 3 langkah wizard sampai selesai → pastikan bisa login `admin`/`admin123` di server baru itu
-
-## Upload ke GitHub (seperti biasa)
-File yang di-upload ke root repo:
+## Upload ke GitHub
+File yang di-upload ke root repo (seperti biasa):
 ```
 index.html, manifest.json, sw.js,
 icon-192.png, icon-512.png, icon-maskable-512.png,
 apple-touch-icon.png, favicon-32.png,
 screenshot-wide.png, screenshot-narrow.png
 ```
-(`Code.gs` TIDAK perlu di-upload ke GitHub — itu khusus untuk ditempel ke Google Sheets template & server yang sudah jalan.)
-
-## Server kelompok yang sudah jalan (server Adab sendiri, bukan template)
-Tetap perlu di-update manual terpisah kalau belum: Extensions → Apps Script → tempel `Code.gs` baru → Deploy → Manage deployments → New version → Deploy.
+`Code.gs` di paket ini SAMA seperti sebelumnya (tidak ada perubahan backend kali ini) — tidak perlu update ulang template atau server manapun.
