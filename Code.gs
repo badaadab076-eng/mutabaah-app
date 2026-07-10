@@ -2,16 +2,18 @@
  * ============================================================
  *  MUTABAAH YAUMIYAH — BACKEND (Google Apps Script + Sheets)
  * ============================================================
- * Cara pakai singkat (lihat SETUP.md untuk panduan lengkap):
- *  1. Buat Google Sheet baru, buka Extensions > Apps Script.
- *  2. Hapus isi default, tempel seluruh isi file ini.
- *  3. Jalankan fungsi `bootstrap` sekali (dari editor, klik Run)
- *     untuk membuat semua tab & header otomatis, plus akun admin awal.
- *  4. Deploy > New deployment > Web app.
- *     - Execute as: Me
- *     - Who has access: Anyone
- *  5. Salin URL /exec yang diberikan, itu jadi "Server Kelompok"
- *     yang dimasukkan ke Pengaturan aplikasi.
+ * Cara pakai (lihat PANDUAN_LENGKAP.md untuk detail lengkap):
+ *  Sebagai TEMPLATE MASTER (dipasang Adab sekali saja):
+ *   1. Buat Google Sheet baru, Extensions > Apps Script, tempel file ini.
+ *   2. Isi TEMPLATE_SPREADSHEET_ID di bawah dengan ID Sheet ini (lihat URL).
+ *   3. JANGAN jalankan bootstrap / deploy di file ini — guard di bawah akan menolaknya.
+ *   4. Share "Anyone with link -> Viewer" (izinkan copy), salin link-nya.
+ *
+ *  Sebagai SALINAN milik kelompok/user baru (otomatis lewat wizard app):
+ *   1. Buka menu 🕌 Setup Mutabaah -> Langkah 1: Inisialisasi Database
+ *   2. Extensions > Apps Script -> Deploy > New deployment > Web app
+ *      Execute as: Me · Who has access: Anyone
+ *   3. Salin URL /exec, tempel di wizard aplikasi.
  * ============================================================
  */
 
@@ -29,17 +31,69 @@ const SHEET_NAMES = {
 };
 
 const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 hari, samakan dengan sesi app lama
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 
 // --- Anti brute-force login ---
 const LOGIN_MAX_ATTEMPTS = 5;
 const LOGIN_LOCKOUT_MS = 5 * 60 * 1000; // 5 menit
 
+// ID Google Sheet TEMPLATE MASTER (bukan salinan siapa pun) — dipakai untuk
+// mencegah bootstrap/deploy tidak sengaja dijalankan di file ini. ID Sheet
+// selalu unik dan TIDAK IKUT BERUBAH saat orang lain "Buat Salinan", jadi
+// pengecekan ini otomatis tidak berlaku lagi untuk semua salinan.
+// Cara lihat ID: dari URL Sheet https://docs.google.com/spreadsheets/d/ID_DI_SINI/edit
+const TEMPLATE_SPREADSHEET_ID = "1XTZwPCD4M803CDQHKyZwEMFbUIS6aJjkEnVCbbf_uFw";
+
+function guardAgainstTemplate_() {
+  const id = SpreadsheetApp.getActiveSpreadsheet().getId();
+  if (id === TEMPLATE_SPREADSHEET_ID) {
+    throw new Error(
+      "Ini file TEMPLATE MASTER — jangan diinisialisasi/deploy langsung. " +
+      "Buat salinan dulu lewat menu File > Buat salinan, baru jalankan di salinannya."
+    );
+  }
+}
+
+/* ---------------------------------------------------------- */
+/* MENU KUSTOM — muncul otomatis tiap kali Sheet ini dibuka,   */
+/* supaya "Inisialisasi Database" cukup 1 klik tanpa perlu     */
+/* buka editor Apps Script atau cari fungsi di dropdown.        */
+/* ---------------------------------------------------------- */
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🕌 Setup Mutabaah')
+    .addItem('Langkah 1: Inisialisasi Database', 'runBootstrapFromMenu_')
+    .addToUi();
+}
+
+function runBootstrapFromMenu_() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    bootstrap();
+    ui.alert(
+      '✅ Database siap!',
+      'Langkah selanjutnya (masih perlu dilakukan manual sekali ini):\n\n' +
+      '1. Buka menu Extensions → Apps Script\n' +
+      '2. Klik tombol biru "Deploy" (kanan atas) → New deployment\n' +
+      '3. Klik ikon ⚙️ di samping "Select type" → pilih Web app\n' +
+      '4. Execute as: Me · Who has access: Anyone\n' +
+      '5. Klik Deploy, lalu salin URL yang berakhiran /exec\n' +
+      '6. Tempel URL itu di wizard aplikasi Mutabaah',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    ui.alert('❌ Gagal', 'Terjadi kesalahan: ' + (err && err.message || err), ui.ButtonSet.OK);
+  }
+}
+
 /* ---------------------------------------------------------- */
 /* BOOTSTRAP — jalankan sekali manual dari editor Apps Script   */
+/* (atau lewat menu "🕌 Setup Mutabaah" di atas, lebih mudah)   */
 /* ---------------------------------------------------------- */
 
 function bootstrap() {
+  guardAgainstTemplate_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   ensureSheet_(ss, SHEET_NAMES.MEMBERS,
@@ -88,6 +142,39 @@ function ensureSheet_(ss, name, headers, plainTextCols) {
     sheet.getRange(2, idx + 1, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat("@");
   });
   return sheet;
+}
+
+/**
+ * RESET BERSIH — jalankan manual dari editor Apps Script kalau ingin mulai
+ * ulang dari nol (mis. setelah selesai testing). Ini akan:
+ *  1. Mengosongkan SEMUA baris data di 6 tab (header tetap ada)
+ *  2. Membuat ulang 1 akun admin default (admin / admin123)
+ *  3. Mengganti TOKEN_SECRET, otomatis membuat SEMUA sesi login lama
+ *     (di semua perangkat/anggota) tidak berlaku lagi -> semua wajib login ulang
+ * PERINGATAN: tindakan ini tidak bisa dibatalkan. Pastikan memang ingin reset total.
+ */
+function resetAllData() {
+  guardAgainstTemplate_();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  [SHEET_NAMES.MEMBERS, SHEET_NAMES.CONFIG, SHEET_NAMES.CUSTOM_ITEMS,
+   SHEET_NAMES.KAS, SHEET_NAMES.MUTABAAH, SHEET_NAMES.BOOKMARKS].forEach(name => {
+    const sheet = ss.getSheetByName(name);
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+  });
+
+  const membersSheet = ss.getSheetByName(SHEET_NAMES.MEMBERS);
+  const salt = generateSalt_();
+  const hash = hashPassword_("admin123", salt);
+  membersSheet.appendRow([
+    Utilities.getUuid(), "Admin", "", "admin", hash, salt, "admin", true,
+  ]);
+
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty("TOKEN_SECRET", Utilities.getUuid() + Utilities.getUuid());
+
+  Logger.log("Reset selesai. Semua data lama sudah dikosongkan, semua sesi lama sudah tidak berlaku. Akun admin baru: admin / admin123 — segera ganti setelah login pertama di semua perangkat.");
 }
 
 /* ---------------------------------------------------------- */
