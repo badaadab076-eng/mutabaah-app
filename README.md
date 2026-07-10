@@ -1,56 +1,38 @@
 # Mutaba'ah Yaumiyah — Panduan Deploy ke GitHub Pages
 
-Paket ini berisi aplikasi yang sudah bisa **diakses lewat link dari mana saja** dan **di-install seperti aplikasi** (PWA). Ikuti langkah di bawah — semua gratis, tidak perlu kartu kredit.
-
-## Isi paket
-
+## Isi paket (SEMUA FILE, TANPA FOLDER — bisa langsung upload semua sekaligus)
 ```
-index.html      -> aplikasi utama (sudah termasuk semua kode, siap pakai)
-manifest.json   -> konfigurasi PWA (nama, ikon, warna)
-sw.js           -> service worker (bikin app bisa dipakai offline & di-install)
-icons/          -> ikon aplikasi
-Code.gs         -> kode backend (Google Apps Script) — untuk admin kelompok, opsional
+index.html
+manifest.json
+sw.js
+Code.gs
+icon-192.png
+icon-512.png
+icon-maskable-512.png
+apple-touch-icon.png
+favicon-32.png
+screenshot-wide.png
+screenshot-narrow.png
 ```
+Tidak ada folder sama sekali sekarang — jadi tinggal select semua file ini sekaligus lalu upload, tidak akan ada masalah lagi seperti sebelumnya.
 
-## Langkah 1 — Buat repository GitHub
+## Langkah upload
+1. Buka repo GitHub kamu (yang sudah ada sebelumnya)
+2. **Add file → Upload files**
+3. Klik **choose your files**, lalu **select semua file di atas sekaligus** (Ctrl/Cmd+klik satu-satu, atau Ctrl+A/Cmd+A kalau semua ada di satu folder di komputermu)
+4. Pastikan semuanya masuk ke **root repo** (bukan di dalam subfolder apapun)
+5. Klik **Commit changes**
+6. Tunggu 1-2 menit, GitHub Pages otomatis update
 
-1. Buka [github.com](https://github.com) dan login (buat akun dulu kalau belum punya, gratis).
-2. Klik tombol **New** (repository baru).
-3. Isi nama repo, misalnya `mutabaah-app`. Pilih **Public**. Klik **Create repository**.
+## Cara mengecek ikon sudah benar
+Buka di browser:
+```
+https://<username-mu>.github.io/<nama-repo>/icon-192.png
+```
+Kalau gambar ikon muncul → sukses. Kalau 404 → berarti file itu belum ke-upload, cek lagi di tab **Code** repo kamu apakah `icon-192.png` ada di daftar file root.
 
-## Langkah 2 — Upload file
+## Update server yang sudah berjalan (kalau Code.gs berubah lagi nanti)
+Buka Google Sheets kelompokmu → **Extensions → Apps Script** → hapus semua kode lama → tempel `Code.gs` yang baru → **Deploy → Manage deployments** → ✏️ pada deployment aktif → **New version** → **Deploy**.
 
-1. Di halaman repo yang baru dibuat, klik **uploading an existing file** (atau menu **Add file → Upload files**).
-2. Seret (drag & drop) **semua isi paket ini** — termasuk folder `icons` — ke area upload.
-3. Klik **Commit changes**.
-
-## Langkah 3 — Aktifkan GitHub Pages
-
-1. Di repo, buka tab **Settings**.
-2. Di menu kiri, klik **Pages**.
-3. Pada bagian **Branch**, pilih `main` dan folder `/ (root)`, lalu klik **Save**.
-4. Tunggu 1–2 menit. GitHub akan menampilkan link seperti:
-   `https://namamu.github.io/mutabaah-app/`
-
-Link itulah yang bisa dibagikan ke siapa saja — bisa dibuka dari HP, laptop, dari mana saja, kapan saja.
-
-## Langkah 4 — Install sebagai aplikasi (opsional tapi disarankan)
-
-Buka link tersebut di HP:
-- **Android/Chrome**: akan muncul tombol/menu "Install App" — atau buka Pengaturan di dalam app lalu tap **Install Aplikasi Sekarang**.
-- **iPhone/Safari**: buka menu Share (kotak panah ke atas) → **Add to Home Screen**.
-
-Setelah itu ikon aplikasi muncul di layar utama seperti aplikasi biasa.
-
-## Langkah 5 — Mode Kelompok (opsional)
-
-Kalau ingin pakai fitur kelompok (banyak anggota, data tersinkron, kas pengajian), buka aplikasinya lalu tap **"Ingin jadi admin kelompok baru? Buat server sendiri di sini"** di layar login — akan dituntun langkah-demi-langkah membuat server sendiri di Google Sheets milikmu, tanpa perlu keluar dari aplikasi.
-
-(File `Code.gs` di paket ini juga sudah otomatis tersalin oleh wizard tersebut — kamu tidak perlu membukanya manual, kecuali ingin melihat isinya.)
-
-## Update aplikasi di kemudian hari
-
-Kalau nanti ada perubahan/perbaikan lagi, cukup upload ulang file yang berubah ke repo yang sama (menimpa file lama) — GitHub Pages otomatis memperbarui dalam 1–2 menit.
-
----
-Ada kendala saat deploy? Screenshot error-nya dan tanyakan kembali di sini.
+## Soal source code (opsional, TIDAK perlu di-upload ke GitHub)
+Kalau nanti saya kirim source `.jsx` mentah untuk pengembangan lanjutan, itu hanya untuk disimpan di komputermu sebagai cadangan/referensi — tidak perlu dan tidak akan dipakai oleh GitHub Pages (yang dipakai untuk menjalankan situs hanya `index.html`, yang sudah berisi semua kode siap pakai).

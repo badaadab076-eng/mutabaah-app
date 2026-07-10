@@ -1,4 +1,5 @@
 {
+  "id": "/mutabaah-app/index.html",
   "name": "Mutaba'ah Yaumiyah",
   "short_name": "Mutaba'ah",
   "description": "Pencatat amalan harian (tahajud, tilawah, dzikir, sholat jamaah) & kas kelompok pengajian.",
@@ -12,8 +13,12 @@
   "dir": "ltr",
   "categories": ["lifestyle", "productivity", "education"],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    { "src": "screenshot-wide.png", "sizes": "1280x800", "type": "image/png", "form_factor": "wide", "label": "Tampilan desktop Mutaba'ah Yaumiyah" },
+    { "src": "screenshot-narrow.png", "sizes": "720x1280", "type": "image/png", "label": "Tampilan mobile Mutaba'ah Yaumiyah" }
   ]
 }
