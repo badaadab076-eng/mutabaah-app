@@ -366,6 +366,10 @@ function normalizeCellValue_(header, value, tz) {
 }
 
 function readAllRows_(sheet) {
+  // Kalau sheet belum ada (mis. instalasi lama belum di-inisialisasi ulang setelah
+  // update yang menambah sheet baru), jangan sampai seluruh permintaan gagal total —
+  // anggap saja datanya kosong, supaya bagian lain (Members, Kas, dst.) tetap tampil.
+  if (!sheet) return [];
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const tz = Session.getScriptTimeZone();
@@ -377,6 +381,7 @@ function readAllRows_(sheet) {
 }
 
 function findMemberRowIndex_(sheet, predicate) {
+  if (!sheet) return null;
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const tz = Session.getScriptTimeZone();
@@ -481,9 +486,17 @@ function actionGetGroupData_(body) {
 
   const customItems = readAllRows_(ss.getSheetByName(SHEET_NAMES.CUSTOM_ITEMS));
   const kasEntries = readAllRows_(ss.getSheetByName(SHEET_NAMES.KAS));
-  const bookmarks = readAllRows_(ss.getSheetByName(SHEET_NAMES.BOOKMARKS)); // untuk teks berjalan tilawah
-  const iuranConfig = readAllRows_(ss.getSheetByName(SHEET_NAMES.IURAN_CONFIG));
-  const iuranPayments = readAllRows_(ss.getSheetByName(SHEET_NAMES.IURAN_PAYMENTS));
+
+  // "Sembuhkan diri" — kalau sheet ini belum ada (server lama belum di-update-init ulang
+  // sejak fitur ini ditambahkan), buat otomatis di sini alih-alih memaksa admin ingat
+  // menjalankan ulang menu Setup secara manual.
+  const bookmarks = readAllRows_(ensureSheet_(ss, SHEET_NAMES.BOOKMARKS,
+    ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]));
+  const iuranConfig = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_CONFIG,
+    ["memberId", "iuranITB", "iuranIWB"]));
+  const iuranPayments = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
+    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+    ["bulan", "tanggal"]));
 
   return { ok: true, config, members, customItems, kasEntries, bookmarks, iuranConfig, iuranPayments };
 }
@@ -541,7 +554,8 @@ function actionSaveWeek_(body) {
 function actionGetBookmark_(body) {
   const auth = requireAuth_(body);
   const memberId = String(body.memberId || auth.sub);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.BOOKMARKS);
+  const sheet = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_NAMES.BOOKMARKS,
+    ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]);
   const found = findMemberRowIndex_(sheet, r => r.memberId === memberId);
   if (!found) return { ok: true, data: { juz: 1, surah: 1, ayat: 1, halaman: 1 } };
   return { ok: true, data: { juz: found.obj.juz, surah: found.obj.surah, ayat: found.obj.ayat, halaman: found.obj.halaman } };
@@ -554,7 +568,8 @@ function actionSaveBookmark_(body) {
     throw new Error("Tidak boleh mengubah bookmark anggota lain");
   }
   return withLock_(() => {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.BOOKMARKS);
+    const sheet = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_NAMES.BOOKMARKS,
+      ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]);
     const d = body.data || {};
     const now = new Date().toISOString();
     const found = findMemberRowIndex_(sheet, r => r.memberId === memberId);
@@ -684,7 +699,8 @@ function actionSaveIuranConfig_(body) {
   requireAdmin_(body);
   const incoming = body.items || []; // [{memberId, iuranITB, iuranIWB}]
   return withLock_(() => {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.IURAN_CONFIG);
+    const sheet = ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_NAMES.IURAN_CONFIG,
+      ["memberId", "iuranITB", "iuranIWB"]);
     const lastRow = sheet.getLastRow();
     if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
     let rowNum = 2;
@@ -713,7 +729,9 @@ function actionAddIuranPayment_(body) {
     const memberRow = findMemberRowIndex_(membersSheet, m => m.id === p.memberId);
     const memberName = memberRow ? memberRow.obj.name : "";
 
-    const iuranSheet = ss.getSheetByName(SHEET_NAMES.IURAN_PAYMENTS);
+    const iuranSheet = ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
+      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+      ["bulan", "tanggal"]);
     iuranSheet.appendRow([
       id, p.memberId || "", p.jenis || "", p.bulan || "", nominal,
       p.tanggal || toDateKey_(new Date()), p.catatan || "", kasEntryId, auth.sub, now,
@@ -736,7 +754,9 @@ function actionDeleteIuranPayment_(body) {
   requireAdmin_(body);
   return withLock_(() => {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const iuranSheet = ss.getSheetByName(SHEET_NAMES.IURAN_PAYMENTS);
+    const iuranSheet = ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
+      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+      ["bulan", "tanggal"]);
     const found = findMemberRowIndex_(iuranSheet, r => r.id === body.id);
     if (found) {
       // Hapus juga entri Kas yang otomatis dibuat waktu pembayaran ini dicatat,

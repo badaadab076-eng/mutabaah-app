@@ -1,20 +1,13 @@
-# Mutaba'ah Yaumiyah — Fitur Baru: Undang Anggota via WhatsApp
+# Fix: Tab WhatsApp Undangan Tidak Terbuka (popup diblokir diam-diam)
 
-## Yang baru
-- Saat **Tambah Anggota**, username & password otomatis di-generate (bisa diedit manual atau klik 🪄 untuk buat ulang password acak)
-- Tombol **"Simpan & Kirim Undangan WhatsApp"** — membuka WhatsApp dengan pesan siap kirim berisi link aplikasi yang **otomatis mengisi form login** penerima (URL server, username, password)
-- Penerima tinggal klik link → form login sudah terisi → tinggal tap **Masuk**
-- Admin bisa lihat status tiap anggota di daftar: **"Belum pernah login"** atau **"Aktif · login terakhir [tanggal jam]"** — otomatis update begitu anggota berhasil login
+## Penyebabnya
+Tombol "Simpan & Kirim Undangan WhatsApp" memanggil `window.open()` (buka WhatsApp) **setelah** proses simpan ke server selesai. Karena ada jeda proses (async) di antara klik tombol dan `window.open`, browser modern (terutama di HP) menganggap ini bukan lagi hasil klik langsung dari user, lalu **memblokirnya diam-diam tanpa pesan error**. Anggota tetap berhasil tersimpan (makanya tidak terasa "gagal"), tapi tab WhatsApp memang tidak pernah terbuka — jadi wajar undangannya tidak pernah terkirim.
 
-## ⚠️ WAJIB: update Code.gs (ada kolom baru di Members)
-Karena ada kolom baru (`lastLoginAt`) di sheet Members, `Code.gs` di paket ini **wajib** ditempel ulang di:
-1. **Template master**
-2. **Server yang sudah jalan** — lalu Deploy versi baru
+## Fix
+Tab WhatsApp sekarang dibuka **sebelum** proses simpan (masih dalam konteks klik langsung), baru diarahkan ke pesan undangan setelah simpan selesai. Kalau ternyata browser tetap memblokir (sangat ketat), sekarang muncul pesan peringatan yang jelas, bukan diam saja.
 
-Tidak perlu jalankan ulang menu Setup — kolom baru otomatis terpakai begitu kode di-update (anggota lama tetap aman, statusnya akan menampilkan "Belum pernah login" sampai mereka login lagi dengan kode baru ini).
-
-## Catatan keamanan
-Link undangan membawa password di URL — begitu link diklik, aplikasi otomatis membersihkan URL tersebut dari address bar/riwayat browser penerima (jadi tidak nyangkut di history). Link **sengaja tidak auto-login sendiri** — penerima tetap harus tap tombol Masuk, supaya tidak ada risiko link-preview WhatsApp/Telegram memicu percobaan login otomatis.
+## Catatan penting yang perlu kamu tahu
+Tombol ini **membuka WhatsApp dengan pesan sudah siap**, tapi kamu (admin) **tetap perlu tap tombol Kirim ➤ di dalam WhatsApp** — ini bukan bug, tapi memang batasan WhatsApp: tidak ada cara mengirim pesan otomatis tanpa sentuhan sama sekali, kecuali pakai WhatsApp Business API resmi (berbayar & perlu verifikasi bisnis).
 
 ## Upload ke GitHub (frontend, seperti biasa)
 ```
@@ -23,3 +16,4 @@ icon-192.png, icon-512.png, icon-maskable-512.png,
 apple-touch-icon.png, favicon-32.png,
 screenshot-wide.png, screenshot-narrow.png
 ```
+`Code.gs` di paket ini sama seperti sebelumnya (tidak ada perubahan backend kali ini) — tidak perlu update ulang server manapun.
