@@ -1,19 +1,27 @@
-# Fix: Tab WhatsApp Undangan Tidak Terbuka (popup diblokir diam-diam)
+# 4 Perbaikan Sekaligus
 
-## Penyebabnya
-Tombol "Simpan & Kirim Undangan WhatsApp" memanggil `window.open()` (buka WhatsApp) **setelah** proses simpan ke server selesai. Karena ada jeda proses (async) di antara klik tombol dan `window.open`, browser modern (terutama di HP) menganggap ini bukan lagi hasil klik langsung dari user, lalu **memblokirnya diam-diam tanpa pesan error**. Anggota tetap berhasil tersimpan (makanya tidak terasa "gagal"), tapi tab WhatsApp memang tidak pernah terbuka — jadi wajar undangannya tidak pernah terkirim.
+## 1. Kas & Iuran sekarang benar-benar terpisah
+Sebelumnya tiap pembayaran Iuran otomatis membuat entri di Kas juga. Sekarang dihapus — dua-duanya berdiri sendiri, tidak saling memengaruhi.
 
-## Fix
-Tab WhatsApp sekarang dibuka **sebelum** proses simpan (masih dalam konteks klik langsung), baru diarahkan ke pesan undangan setelah simpan selesai. Kalau ternyata browser tetap memblokir (sangat ketat), sekarang muncul pesan peringatan yang jelas, bukan diam saja.
+## 2. Fix: "Belum pernah login" padahal sudah login
+Ada 2 penyebab, sekaligus diperbaiki:
+- Sheet Members lama belum punya kolom `lastLoginAt` di baris header-nya (cuma ditambahkan otomatis untuk sheet BARU, bukan yang sudah ada isinya) → sekarang ada migrasi otomatis: kolom yang kurang di sheet lama akan ditambahkan sendiri ke header begitu diakses.
+- Data `lastLoginAt` sempat sengaja tidak disertakan saat dikirim ke aplikasi (`actionGetGroupData_`) → sudah diperbaiki, sekarang ikut terkirim.
 
-## Catatan penting yang perlu kamu tahu
-Tombol ini **membuka WhatsApp dengan pesan sudah siap**, tapi kamu (admin) **tetap perlu tap tombol Kirim ➤ di dalam WhatsApp** — ini bukan bug, tapi memang batasan WhatsApp: tidak ada cara mengirim pesan otomatis tanpa sentuhan sama sekali, kecuali pakai WhatsApp Business API resmi (berbayar & perlu verifikasi bisnis).
+## 3. Fix: Modal (form Kas/Anggota/dll) muncul di luar layar, harus scroll dulu
+Akar masalahnya CSS: filter mode-malam yang dipasang di wrapper utama aplikasi membuat semua elemen "fixed" (termasuk modal) dihitung posisinya relatif ke wrapper itu, bukan ke layar sungguhan — makanya modal "kabur" ke bawah, di luar area yang kelihatan. Sekarang modal (dan juga badge loading & notifikasi toast) dirender langsung ke `<body>` lewat React Portal, sepenuhnya lepas dari masalah ini.
 
-## Upload ke GitHub (frontend, seperti biasa)
+## 4. Fix: Loading "Menyimpan..." tidak terlihat saat simpan
+Penyebabnya sama persis dengan #3 (bug CSS yang sama) — otomatis ikut teratasi begitu badge status disimpan dipindah lewat Portal. Sekarang harusnya selalu kelihatan di bagian atas layar setiap kali menyimpan data, di HP maupun laptop, mode terang maupun gelap.
+
+## ⚠️ WAJIB update Code.gs (ada perubahan skema & logika)
+Update di **template master** dan **server yang sudah jalan**:
+Extensions → Apps Script → tempel `Code.gs` baru → Deploy → Manage deployments → New version → Deploy.
+
+## Upload ke GitHub (frontend)
 ```
 index.html, manifest.json, sw.js,
 icon-192.png, icon-512.png, icon-maskable-512.png,
 apple-touch-icon.png, favicon-32.png,
 screenshot-wide.png, screenshot-narrow.png
 ```
-`Code.gs` di paket ini sama seperti sebelumnya (tidak ada perubahan backend kali ini) — tidak perlu update ulang server manapun.

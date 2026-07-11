@@ -111,7 +111,7 @@ function bootstrap() {
   ensureSheet_(ss, SHEET_NAMES.IURAN_CONFIG,
     ["memberId", "iuranITB", "iuranIWB"]);
   ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
-    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
     ["bulan", "tanggal"]);
 
   // Buat 1 akun admin default jika Members masih kosong
@@ -142,6 +142,19 @@ function ensureSheet_(ss, name, headers, plainTextCols) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
+  } else {
+    // Migrasi ringan: kalau sheet sudah ada isinya dari versi Code.gs sebelumnya dan ada
+    // kolom baru yang belum dikenal (mis. "lastLoginAt"), tambahkan di ujung kanan header
+    // tanpa mengubah/menghapus data yang sudah ada. Tanpa ini, kolom baru cuma nyangkut di
+    // data (lewat actionSaveMembers_ dkk) tapi TIDAK PERNAH terbaca balik karena nama
+    // headernya sendiri tidak pernah ditulis di baris 1 — makanya fitur yang bergantung
+    // padanya (mis. status "sudah login") terlihat tidak pernah berhasil walau sebenarnya
+    // sudah tersimpan di sheet.
+    const existingHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(),1)).getValues()[0];
+    const missing = headers.filter(h => existingHeaders.indexOf(h) === -1);
+    if (missing.length > 0) {
+      sheet.getRange(1, existingHeaders.length + 1, 1, missing.length).setValues([missing]);
+    }
   }
   (plainTextCols || []).forEach(col => {
     const idx = headers.indexOf(col);
@@ -349,7 +362,8 @@ function requireAdmin_(body) {
 /* ---------------------------------------------------------- */
 
 function getMembersSheet_() {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.MEMBERS);
+  return ensureSheet_(SpreadsheetApp.getActiveSpreadsheet(), SHEET_NAMES.MEMBERS,
+    ["id", "name", "phone", "username", "passwordHash", "passwordSalt", "role", "active", "lastLoginAt"]);
 }
 
 // PENTING: Google Sheets otomatis mengubah string tanggal ("2026-07-05") yang ditulis
@@ -474,10 +488,10 @@ function actionGetGroupData_(body) {
   requireAuth_(body);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const membersRaw = readAllRows_(ss.getSheetByName(SHEET_NAMES.MEMBERS));
+  const membersRaw = readAllRows_(getMembersSheet_());
   const members = membersRaw
     .filter(m => m.active !== false)
-    .map(m => ({ id: m.id, name: m.name, phone: m.phone, role: m.role, username: m.username }));
+    .map(m => ({ id: m.id, name: m.name, phone: m.phone, role: m.role, username: m.username, lastLoginAt: m.lastLoginAt || "" }));
 
   const configRows = readAllRows_(ss.getSheetByName(SHEET_NAMES.CONFIG));
   let config = {};
@@ -495,7 +509,7 @@ function actionGetGroupData_(body) {
   const iuranConfig = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_CONFIG,
     ["memberId", "iuranITB", "iuranIWB"]));
   const iuranPayments = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
-    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
     ["bulan", "tanggal"]));
 
   return { ok: true, config, members, customItems, kasEntries, bookmarks, iuranConfig, iuranPayments };
@@ -718,35 +732,21 @@ function actionAddIuranPayment_(body) {
   const auth = requireAdmin_(body);
   const p = body.payment || {};
   const id = Utilities.getUuid();
-  const kasEntryId = Utilities.getUuid();
   const now = new Date().toISOString();
   const nominal = Number(p.nominal) || 0;
-  const jenisLabel = { ITB: "ITB", IWB: "IWB", Sukarela: "Sukarela" }[p.jenis] || p.jenis;
 
   return withLock_(() => {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const membersSheet = ss.getSheetByName(SHEET_NAMES.MEMBERS);
-    const memberRow = findMemberRowIndex_(membersSheet, m => m.id === p.memberId);
-    const memberName = memberRow ? memberRow.obj.name : "";
-
+    // Iuran sengaja dipisah total dari Kas (pencatatan & laporan masing-masing berdiri
+    // sendiri) — tidak lagi otomatis membuat entri di sheet Kas.
     const iuranSheet = ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
-      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
       ["bulan", "tanggal"]);
     iuranSheet.appendRow([
       id, p.memberId || "", p.jenis || "", p.bulan || "", nominal,
-      p.tanggal || toDateKey_(new Date()), p.catatan || "", kasEntryId, auth.sub, now,
+      p.tanggal || toDateKey_(new Date()), p.catatan || "", auth.sub, now,
     ]);
-
-    // Otomatis tercatat juga sebagai pemasukan di Kas, supaya saldo kelompok tetap akurat
-    // dan laporan Kas tidak perlu diisi dobel manual oleh admin.
-    const kasSheet = ss.getSheetByName(SHEET_NAMES.KAS);
-    kasSheet.appendRow([
-      kasEntryId, "masuk", nominal,
-      `Iuran ${jenisLabel} — ${memberName || "anggota"} (${p.bulan || ""})`,
-      p.tanggal || toDateKey_(new Date()), p.memberId || "", auth.sub, now,
-    ]);
-
-    return { ok: true, id, kasEntryId };
+    return { ok: true, id };
   });
 }
 
@@ -755,20 +755,10 @@ function actionDeleteIuranPayment_(body) {
   return withLock_(() => {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const iuranSheet = ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
-      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "kasEntryId", "recordedBy", "createdAt"],
+      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
       ["bulan", "tanggal"]);
     const found = findMemberRowIndex_(iuranSheet, r => r.id === body.id);
-    if (found) {
-      // Hapus juga entri Kas yang otomatis dibuat waktu pembayaran ini dicatat,
-      // supaya saldo Kas tidak jadi salah gara-gara entri yatim (orphan).
-      const kasEntryId = found.obj.kasEntryId;
-      if (kasEntryId) {
-        const kasSheet = ss.getSheetByName(SHEET_NAMES.KAS);
-        const kasFound = findMemberRowIndex_(kasSheet, r => r.id === kasEntryId);
-        if (kasFound) kasSheet.deleteRow(kasFound.rowIndex);
-      }
-      iuranSheet.deleteRow(found.rowIndex);
-    }
+    if (found) iuranSheet.deleteRow(found.rowIndex);
     return { ok: true };
   });
 }
