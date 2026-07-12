@@ -159,7 +159,14 @@ function ensureSheet_(ss, name, headers, plainTextCols) {
   (plainTextCols || []).forEach(col => {
     const idx = headers.indexOf(col);
     if (idx === -1) return;
-    sheet.getRange(2, idx + 1, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+    // PENTING: pakai getLastRow() (baris yang benar-benar ada isinya), BUKAN
+    // getMaxRows() (kapasitas total sheet, defaultnya 1000 baris kosong).
+    // Memformat 1000 baris kosong tiap kali fungsi ini dipanggil adalah operasi
+    // berat yang tidak perlu dan jadi penyebab utama aplikasi terasa lambat.
+    const usedRows = Math.max(sheet.getLastRow() - 1, 0);
+    if (usedRows > 0) {
+      sheet.getRange(2, idx + 1, usedRows, 1).setNumberFormat("@");
+    }
   });
   return sheet;
 }
@@ -486,33 +493,41 @@ function actionChangePassword_(body) {
 
 function actionGetGroupData_(body) {
   requireAuth_(body);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const membersRaw = readAllRows_(getMembersSheet_());
-  const members = membersRaw
-    .filter(m => m.active !== false)
-    .map(m => ({ id: m.id, name: m.name, phone: m.phone, role: m.role, username: m.username, lastLoginAt: m.lastLoginAt || "" }));
+  // Kunci sementara — mencegah baca data persis di tengah proses tulis
+  // (mis. saveMembers yang sempat mengosongkan sheet sebelum menulis ulang).
+  // Tanpa ini, permintaan baca yang "kebetulan lewat" di momen itu bisa
+  // mendapat data kosong/tidak lengkap, padahal sebenarnya sedang ditulis ulang —
+  // inilah penyebab data "tiba-tiba kosong" lalu normal lagi setelah beberapa saat.
+  return withLock_(() => {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  const configRows = readAllRows_(ss.getSheetByName(SHEET_NAMES.CONFIG));
-  let config = {};
-  const configRow = configRows.find(r => r.key === "config");
-  if (configRow) { try { config = JSON.parse(configRow.value); } catch (e) {} }
+    const membersRaw = readAllRows_(getMembersSheet_());
+    const members = membersRaw
+      .filter(m => m.active !== false)
+      .map(m => ({ id: m.id, name: m.name, phone: m.phone, role: m.role, username: m.username, lastLoginAt: m.lastLoginAt || "" }));
 
-  const customItems = readAllRows_(ss.getSheetByName(SHEET_NAMES.CUSTOM_ITEMS));
-  const kasEntries = readAllRows_(ss.getSheetByName(SHEET_NAMES.KAS));
+    const configRows = readAllRows_(ss.getSheetByName(SHEET_NAMES.CONFIG));
+    let config = {};
+    const configRow = configRows.find(r => r.key === "config");
+    if (configRow) { try { config = JSON.parse(configRow.value); } catch (e) {} }
 
-  // "Sembuhkan diri" — kalau sheet ini belum ada (server lama belum di-update-init ulang
-  // sejak fitur ini ditambahkan), buat otomatis di sini alih-alih memaksa admin ingat
-  // menjalankan ulang menu Setup secara manual.
-  const bookmarks = readAllRows_(ensureSheet_(ss, SHEET_NAMES.BOOKMARKS,
-    ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]));
-  const iuranConfig = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_CONFIG,
-    ["memberId", "iuranITB", "iuranIWB"]));
-  const iuranPayments = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
-    ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
-    ["bulan", "tanggal"]));
+    const customItems = readAllRows_(ss.getSheetByName(SHEET_NAMES.CUSTOM_ITEMS));
+    const kasEntries = readAllRows_(ss.getSheetByName(SHEET_NAMES.KAS));
 
-  return { ok: true, config, members, customItems, kasEntries, bookmarks, iuranConfig, iuranPayments };
+    // "Sembuhkan diri" — kalau sheet ini belum ada (server lama belum di-update-init ulang
+    // sejak fitur ini ditambahkan), buat otomatis di sini alih-alih memaksa admin ingat
+    // menjalankan ulang menu Setup secara manual.
+    const bookmarks = readAllRows_(ensureSheet_(ss, SHEET_NAMES.BOOKMARKS,
+      ["memberId", "juz", "surah", "ayat", "halaman", "updatedAt"]));
+    const iuranConfig = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_CONFIG,
+      ["memberId", "iuranITB", "iuranIWB"]));
+    const iuranPayments = readAllRows_(ensureSheet_(ss, SHEET_NAMES.IURAN_PAYMENTS,
+      ["id", "memberId", "jenis", "bulan", "nominal", "tanggal", "catatan", "recordedBy", "createdAt"],
+      ["bulan", "tanggal"]));
+
+    return { ok: true, config, members, customItems, kasEntries, bookmarks, iuranConfig, iuranPayments };
+  });
 }
 
 /* ---------------------------------------------------------- */
@@ -538,8 +553,10 @@ function actionGetWeek_(body) {
 function actionSaveWeek_(body) {
   const auth = requireAuth_(body);
   const memberId = String(body.memberId || "");
-  if (auth.role !== "admin" && auth.sub !== memberId) {
-    throw new Error("Tidak boleh mengubah data anggota lain");
+  // Berlaku untuk SEMUA orang termasuk admin — isi harian hanya boleh oleh pemiliknya sendiri.
+  // Admin memantau progres anggota lain lewat getGroupData (Beranda/Laporan), bukan menulis di sini.
+  if (auth.sub !== memberId) {
+    throw new Error("Tidak boleh mengubah data isi harian anggota lain");
   }
   const monday = String(body.monday || "");
   const key = memberId + ":" + monday;
@@ -578,7 +595,7 @@ function actionGetBookmark_(body) {
 function actionSaveBookmark_(body) {
   const auth = requireAuth_(body);
   const memberId = String(body.memberId || auth.sub);
-  if (auth.role !== "admin" && auth.sub !== memberId) {
+  if (auth.sub !== memberId) {
     throw new Error("Tidak boleh mengubah bookmark anggota lain");
   }
   return withLock_(() => {
@@ -632,10 +649,17 @@ function actionDeleteKas_(body) {
 
 function actionSaveMembers_(body) {
   requireAdmin_(body);
+  const incoming = body.members || [];
+  // Jaring pengaman sisi server (selain yang sudah ada di UI): jangan sampai tersimpan
+  // daftar anggota tanpa admin sama sekali — itu akan mengunci kelompok, tidak ada lagi
+  // yang bisa mengelola anggota/pengaturan setelahnya.
+  const incomingActiveAdmins = incoming.filter(m => m.active !== false && (m.role || "member") === "admin").length;
+  if (incoming.length > 0 && incomingActiveAdmins === 0) {
+    throw new Error("Tidak bisa menyimpan — minimal harus ada 1 admin aktif di kelompok.");
+  }
   return withLock_(() => {
     const sheet = getMembersSheet_();
     const existing = readAllRows_(sheet);
-    const incoming = body.members || [];
 
     // Hapus semua baris data lama, tulis ulang (skala kecil, aman & simpel).
     // Dibungkus withLock_ supaya 2 admin yang edit hampir bersamaan tidak
